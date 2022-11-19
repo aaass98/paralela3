@@ -10,25 +10,23 @@ int main(int argc, char** argv) {
 
 	int n,		// Número de elementos do vetor de entrada (com 0s)
 		m,		// Número de elementos do vetor de saída (sem 0s)
-		//* vIn,	// Vetor de entrada de n elementos
+		* vIn,	// Vetor de entrada de n elementos
 		i;
-	int vIn[10] = {10, 77, 0, 24, 0, 0, 31, 58, 9, 2};
 	FILE* arqIn,	// Arquivo texto de entrada
 		* arqOut;	// Arquivo texto de saída
 
   // -------------------------------------------------------------------------
   // Inicialização
-	
+
 	// Initialize the MPI environment
 	MPI_Init(&argc, &argv);
-	
+
 	// Get the rank of the process
 	int pId, pNumber;
 	m = 0;
 	MPI_Comm_rank(MPI_COMM_WORLD, &pId);
 	MPI_Comm_size(MPI_COMM_WORLD, &pNumber);
-	
-	/*
+
 	if (argc != 3)
 	{
 		if (pId == 0) {
@@ -38,10 +36,9 @@ int main(int argc, char** argv) {
 		MPI_Finalize();
 		exit(1);
 	}
-
-	
 	printf(argv[1]);
 	printf(argv[2]);
+
 
 	// Abre arquivo de entrada
 	arqIn = fopen(argv[1], "rt");
@@ -56,7 +53,7 @@ int main(int argc, char** argv) {
 	}
 
 	// Lê tamanho do vetor de entrada
-	fscanf(arqIn, "%d", &n); 
+	fscanf(arqIn, "%d", &n);
 
 	// Aloca vetores de entrada e saída
 	vIn = (int*)malloc(n * sizeof(int));
@@ -78,28 +75,27 @@ int main(int argc, char** argv) {
 	// Fecha arquivo de entrada
 	fclose(arqIn);
 
-	*/
-
 	// -------------------------------------------------------------------------
 	// Corpo principal do programa
 
 	// TODO: Medir tempo inicial
-	n = 10;
+
 	// Remove 0s do vetor de entrada, produzindo vetor de saída
 	if (pId == 0) {
-		std::string result="";
+		std::string result = "";
 		for (i = 1; i < pNumber; i++)
 		{
-			char msg[20];
+			char msg[100];
 			// Recebe mensagem do processo i com os valores do vetor
-			//MPI_Recv(msg, , MPI_CHAR, i, 0, MPI_COMM_WORLD, &status);
+			MPI_Recv(msg, , MPI_CHAR, i, 0, MPI_COMM_WORLD, &status);
 			//result = result + std::string(msg);
 
 			// Recebe mensagem do processo i com o valor de m
 			int aux;
 			MPI_Recv(&aux, sizeof(int), MPI_INT, i, 1, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+			printf("%d ", i);
 			m += aux;
-			printf("processo %d: m=", i, m);
+
 			// TODO: Medir tempo final
 			// TODO: calcular tempo e printar
 			//printf("Tempo=%.2fms\n", tempo);
@@ -112,21 +108,22 @@ int main(int argc, char** argv) {
 			if (vIn[i] != 0) {
 				//adicionar valor ao resultado
 				numbers = numbers + std::to_string(vIn[i]) + " ";
+				printf("a");
 				//incrementar contador
 				m++;
 			}
+			//envia mensagem para o processo 0 contendo os elementos a serem escritos na saida
+			MPI_Send(numbers.c_str(), strlen(numbers.c_str()) + 1, MPI_CHAR, 0, 0, MPI_COMM_WORLD);
+			//envia mensagem contendo o valor de m a ser somado
+			MPI_Send(&m, 1, MPI_CHAR, 0, 0, MPI_COMM_WORLD);
 		}
-		//envia mensagem para o processo 0 contendo os elementos a serem escritos na saida
-		//MPI_Send(numbers.c_str(), strlen(numbers.c_str()) + 1, MPI_CHAR, 0, 0, MPI_COMM_WORLD);
-		//envia mensagem contendo o valor de m a ser somado
-		MPI_Send(&m, 1, MPI_INT, 0, 0, MPI_COMM_WORLD);
-		printf("processo %d: aux=", pId, m);
 	}
 
 	// -------------------------------------------------------------------------
 	// Finalização
+
+
 	if (pId == 0) {
-		/*
 		// Cria arquivo de saída
 		arqOut = fopen(argv[2], "wt");
 
@@ -142,10 +139,9 @@ int main(int argc, char** argv) {
 
 		// Fecha arquivo de saída
 		fclose(arqOut);
-		*/
 		// Libera vetores de entrada e saída
-		//free(vIn);
-		printf("%d\n",m);
+		free(vIn);
+		printf("%d\n", n);
 	}
 
 	// Finalize the MPI environment.
