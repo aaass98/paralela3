@@ -1,19 +1,35 @@
+/*
+Felipe Munoz Mazur
+Leopoldo Santos Silva
+
+Infelizmente nao conseguimos resolver um erro que acontece no programa.
+Ainda assim, esperamos que a logica utilizada tenha algum fundamento e possa servir para algo.
+Obrigado.
+*/
 #include <mpi.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <time.h>
+#include <sys/time.h>
 #include <string>
 
-#pragma warning(disable : 4996)
 
 int main(int argc, char** argv) {
 
 	int n,		// Número de elementos do vetor de entrada (com 0s)
 		m,		// Número de elementos do vetor de saída (sem 0s)
 		* vIn,	// Vetor de entrada de n elementos
+		* VOut,
 		i;
 	FILE* arqIn,	// Arquivo texto de entrada
 		* arqOut;	// Arquivo texto de saída
+
+	/*MPI TAGS:
+	0 - valor de n
+	1 - valor de m a ser somado no processo 0
+	2 - numeros na saida
+	3 - tamanho da cadeia de caracteres na saida (para alocar no processo 0)
+	*/
 
   // -------------------------------------------------------------------------
   // Inicialização
@@ -36,6 +52,7 @@ int main(int argc, char** argv) {
 		MPI_Finalize();
 		exit(1);
 	}
+
 
 	if (pId == 0) {
 		// Abre arquivo de entrada
@@ -77,38 +94,102 @@ int main(int argc, char** argv) {
 	// -------------------------------------------------------------------------
 	// Corpo principal do programa
 
-
-
-	// Remove 0s do vetor de entrada, produzindo vetor de saída
 	if (pId == 0) {
-		// TODO: Medir tempo inicial
-		std::string result = "";
-		
-		//envia os elementos a serem processados por cada processo
-		for (i = 1; i < pNumber; i++)
-		{
-			//envia os elementos a serem processados
-			//TODO
+		// Mede instante de tempo inicial
+		struct timeval tIni, tFim;
+		gettimeofday(&tIni, 0);
+
+		//envia n para os outros processos fazerem os calculos
+		for (int i = 1; i < pNumber; i++) {
+			MPI_Send(&n, 1, MPI_INT, i, 0, MPI_COMM_WORLD);
+			printf("\nenviado");
 		}
+	}
+	else {//recebe o valor de n do processo 0
+		MPI_Recv(&n, 1, MPI_INT, 0, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+		printf("\nrecebido");
+	}
 
-		//recebe os resultados
+
+	//trecho baseado no codigo disponivel em https://gist.github.com/ehamberg/1263868/cae1d85dee821d45fb0cd58747aaf33370f3f1ed
+	int sum = 0;
+	int rem = n % (pNumber - 1);
+	//envia os elementos a serem processados por cada processo
+	int* sendcounts = (int*)malloc(sizeof(int) * pNumber);
+	int* displs = (int*)malloc(sizeof(int) * pNumber);
+	if (sendcounts == NULL || displs == NULL) {
+		printf("\nErro na alocação de memoria no processo %d\n", pId);
+		MPI_Finalize();
+		exit(1);
+	}
+
+	int* recvBuf;
+
+	//calcula sendcounts
+	sendcounts[0] = 0;
+	for (i = 1; i < pNumber; i++)
+	{
+		sendcounts[i] = n / (pNumber - 1);
+		if (rem > 0) {
+			sendcounts[i]++;
+			rem--;
+		}
+		displs[i] = sum;
+		sum += sendcounts[i];
+		recvBuf = (int*)malloc(sizeof(int) * sendcounts[i]);
+		if (recvBuf == NULL) {
+			printf("\nErro na alocação de memoria para recvBuf no processo %d\n", pId);
+		}
+	}
+	// distribui os elementos entre os processos
+	MPI_Scatterv(&vIn, sendcounts, displs, MPI_INT, &recvBuf, NULL, MPI_CHAR, 0, MPI_COMM_WORLD);
+
+	// processa os valores
+	if (pId != 0) {
+
+		//processa a entrada
+		std::string numbers = "";
+		for (int i = 0; i < sendcounts[pId]; i++) {
+			if (recvBuf[i] = !0) {
+				//adicionar valor ao resultado
+				numbers = numbers + std::to_string(vIn[i]) + " ";
+				//incrementar contador
+				m++;
+			}
+		}
+		//envia mensagem contendo o valor de m a ser somado
+		MPI_Send(&m, 1, MPI_INT, 0, 1, MPI_COMM_WORLD);
+		//envia mensagem contendo o tamanho da cadeia de caracteres
+		int charSize = strlen(numbers.c_str());
+		MPI_Send(&charSize, 1, MPI_INT, 0, 3, MPI_COMM_WORLD);
+		//envia mensagem para o processo 0 contendo os elementos a serem escritos na saida
+		MPI_Send(numbers.c_str(), strlen(numbers.c_str()) + 1, MPI_CHAR, 0, 2, MPI_COMM_WORLD);
+	}
+	else { //coleta os resultados no processo 0 e escreve no arquivo de saida
+		std::string result = "";
+		//recebe os valores de m
 		for (i = 1; i < pNumber; i++)
 		{
-			char msg[100];
-			// Recebe mensagem do processo i com os valores do vetor
-			//MPI_Recv(msg, , MPI_CHAR, i, 0, MPI_COMM_WORLD, &status);
-			//result = result + std::string(msg);
-
 			// Recebe mensagem do processo i com o valor de m
 			int aux;
 			MPI_Recv(&aux, 1, MPI_INT, i, 1, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-			printf("%d ", i);
 			m += aux;
-
-			// TODO: Medir tempo final
-			// TODO: calcular tempo e printar
-			//printf("Tempo=%.2fms\n", tempo);
+			// Recebe mensagem do processo i com o tamanho da cadeia de caracteres
+			MPI_Recv(&aux, 1, MPI_INT, i, 3, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+			// Aloca memoria e recebe a cadeia a ser escrita
+			char* msg = (char*)malloc(sizeof(char) * aux);
+			MPI_Recv(msg, aux + 1, MPI_CHAR, i, 2, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+			result = result + std::string(msg);
+			free(msg);
 		}
+
+		// Mede instante de tempo final
+		gettimeofday(&tFim, 0);
+		// Tempo de execução em milissegundos
+		long segundos = tFim.tv_sec - tIni.tv_sec;
+		long microsegundos = tFim.tv_usec - tIni.tv_usec;
+		double tempo = (segundos * 1e3) + (microsegundos * 1e-3);
+		printf("Tempo=%.2fms\n", tempo);
 
 		// -------------------------------------------------------------------------
 		// Escrita no arquivo de saida
@@ -129,46 +210,14 @@ int main(int argc, char** argv) {
 		fclose(arqOut);
 
 		printf("%d\n", n);
-	}
-	else {
-		//allocate memory for arrays
-		vIn = (int*)malloc((1+(n/pNumber))* sizeof(int));
-		if (vIn == NULL)
-		{
-			printf("\nErro na alocação de memoria no processo %d\n", pId);
-			MPI_Finalize();
-			exit(1);
-		}
-		//set all values to 0
-		for (int i = 0; i < 1 + (n / pNumber); i++) {
-			vIn[i]=0;
-		}
 
-		//recebe os valores do processo 0
-		// TODO
-
-		//processa a entrada
-		std::string numbers = "";
-		for (int i = 0; i < 1 + (n / pNumber); i++) {
-			if (vIn[i] =! 0) {
-				//adicionar valor ao resultado
-				numbers = numbers + std::to_string(vIn[i]) + " ";
-				//incrementar contador
-				m++;
-			}
-		}
-		//envia mensagem para o processo 0 contendo os elementos a serem escritos na saida
-		//MPI_Send(numbers.c_str(), strlen(numbers.c_str()) + 1, MPI_CHAR, 0, 0, MPI_COMM_WORLD);
-		//envia mensagem contendo o valor de m a ser somado
-		MPI_Send(&m, 1, MPI_INT, 0, 1, MPI_COMM_WORLD);
-
+		// Libera vetores de entrada
+		free(vIn);
 	}
 
-	// -------------------------------------------------------------------------
-	// Finalização
 
-	// Libera vetores de entrada
-	free(vIn);
 	// Finalize the MPI environment.
+	free(sendcounts);
+	free(displs);
 	MPI_Finalize();
 }
